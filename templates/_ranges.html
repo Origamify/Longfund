@@ -1,0 +1,10 @@
+{# timescale buttons under a chart; wired by lfRanges() in _chart_defaults.html.
+   Server marks the initial selection from ?range=; clicks re-slice in-browser. #}
+<div class="ranges" data-ranges>
+  {% for n, label in [
+    ("21", "1M"), ("63", "3M"), ("126", "6M"), ("ytd", "YTD"),
+    ("252", "1Y"), ("504", "2Y"), ("1260", "5Y"), ("2520", "10Y"), ("max", "MAX"),
+  ] %}
+  <button data-range="{{ n }}"{% if range_arg == n %} class="selected"{% endif %}>{{ label }}</button>
+  {% endfor %}
+</div>

@@ -1,0 +1,100 @@
+{# shared Chart.js loader + theme-aware defaults, included by chart pages.
+   Colors come from theme.css custom properties (--muted/--border/--chart-*),
+   so the light/dark toggle restyles charts live: pages register their Chart
+   instance (window.lfCharts) and an optional color-restyler
+   (window.lfRestylers); the toggle calls window.lfApplyChartTheme(). #}
+<script src="{{ url_for('static', filename='chart.umd.min.js') }}"></script>
+<script>
+  window.lfCharts = [];
+  window.lfRestylers = [];
+
+  const lfCssVar = (name) =>
+    getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+  function lfApplyChartDefaults() {
+    Chart.defaults.color = lfCssVar("--muted");
+    Chart.defaults.borderColor = lfCssVar("--border");
+    Chart.defaults.font.family = 'ui-monospace, "SF Mono", Menlo, Consolas, monospace';
+    Chart.defaults.font.size = 11;
+    Chart.defaults.plugins.tooltip.backgroundColor = lfCssVar("--panel-2");
+    Chart.defaults.plugins.tooltip.borderColor = lfCssVar("--border");
+    Chart.defaults.plugins.tooltip.borderWidth = 1;
+    Chart.defaults.plugins.tooltip.titleColor = lfCssVar("--text");
+    Chart.defaults.plugins.tooltip.bodyColor = lfCssVar("--text");
+  }
+
+  function lfApplyChartTheme() {
+    lfApplyChartDefaults();
+    window.lfRestylers.forEach((fn) => fn());
+    window.lfCharts.forEach((c) => c.update("none"));
+  }
+
+  lfApplyChartDefaults();
+
+  // x-axis date labels, shared by chart pages. Short windows (≤ ~1 year)
+  // drop the year ("Mar 5"); long windows place ticks on the first bar of
+  // each year and label just the year ("2024") — no overlap on either end
+  const LF_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const LF_YEAR_MS = 366 * 86400000;
+
+  function lfXScale() {
+    return {
+      type: "category",
+      afterBuildTicks(scale) {
+        const labels = scale.chart.data.labels || [];
+        const long = labels.length > 1 &&
+          Date.parse(labels[labels.length - 1]) - Date.parse(labels[0]) > LF_YEAR_MS;
+        if (!long) return; // short window: default even ticks, formatted below
+        const ticks = [];
+        let year = "";
+        labels.forEach((d, i) => {
+          // year boundary, or the first bar of the window (labeled with its
+          // year even when the window starts mid-year)
+          if (i === 0 || d.slice(0, 4) !== year) { year = d.slice(0, 4); ticks.push({ value: i }); }
+        });
+        scale.ticks = ticks;
+      },
+      ticks: {
+        maxTicksLimit: 12,
+        callback(value) {
+          const labels = this.chart.data.labels || [];
+          const d = labels[value];
+          if (!d) return "";
+          if (Date.parse(labels[labels.length - 1]) - Date.parse(labels[0]) > LF_YEAR_MS)
+            return d.slice(0, 4); // long window: ticks are year starts only
+          return `${LF_MONTHS[+d.slice(5, 7) - 1]} ${+d.slice(8, 10)}`;
+        },
+      },
+    };
+  }
+
+  // timescale row: wire the [data-ranges] buttons under a chart. `apply(n)`
+  // re-slices chart data for n bars; `initial` is "ytd" or a bar count;
+  // selection is mirrored into ?range= for deep links
+  function lfRanges(apply, labels, initial) {
+    const bars = (v) => {
+      if (v === "max") return labels.length;
+      if (v === "ytd") {
+        const year = labels[labels.length - 1].slice(0, 4);
+        return Math.max(2, labels.length - labels.findIndex((d) => d.startsWith(year)));
+      }
+      return Number(v);
+    };
+    const row = document.querySelector("[data-ranges]");
+    const mark = (v) =>
+      row.querySelectorAll("button").forEach((b) =>
+        b.classList.toggle("selected", b.dataset.range === v));
+    row.addEventListener("click", (e) => {
+      const btn = e.target.closest("button[data-range]");
+      if (!btn) return;
+      apply(bars(btn.dataset.range));
+      mark(btn.dataset.range);
+      const url = new URLSearchParams(location.search);
+      url.set("range", btn.dataset.range);
+      history.replaceState(null, "", `?${url}`);
+    });
+    apply(bars(initial));
+    mark(String(initial));
+  }
+</script>

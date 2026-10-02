@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script>
+    // theme before first paint (no flash): saved choice wins, else the OS
+    (function () {
+      var saved = null;
+      try { saved = localStorage.getItem("lf-theme"); } catch (e) {}
+      var dark = saved ? saved === "dark"
+        : window.matchMedia("(prefers-color-scheme: dark)").matches;
+      document.documentElement.dataset.theme = dark ? "dark" : "light";
+    })();
+  </script>
+  <title>Longfund</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='theme.css') }}">
+</head>
+<body>
+  <header class="topbar">
+    <div class="shell topbar-inner">
+      <a class="brand" href="/">Longfund</a>
+      <nav class="topnav">
+        <a href="/">watchlist</a>
+        <button class="theme-toggle" id="theme-toggle" title="switch light/dark theme">☾</button>
+      </nav>
+    </div>
+  </header>
+  <main class="shell">
+    {% block content %}{% endblock %}
+  </main>
+  <footer class="footer shell">
+    free data — indicative only, not investment advice
+  </footer>
+  <script>
+    document.getElementById("theme-toggle").addEventListener("click", function () {
+      var root = document.documentElement;
+      var next = root.dataset.theme === "dark" ? "light" : "dark";
+      root.dataset.theme = next;
+      try { localStorage.setItem("lf-theme", next); } catch (e) {}
+      this.textContent = next === "dark" ? "☀" : "☾";
+      // chart pages restyle live; other pages just recolor via CSS
+      if (window.lfApplyChartTheme) window.lfApplyChartTheme();
+    });
+    (function () {  // initial button glyph matches the active theme
+      var b = document.getElementById("theme-toggle");
+      b.textContent = document.documentElement.dataset.theme === "dark" ? "☀" : "☾";
+    })();
+  </script>
+</body>
+</html>

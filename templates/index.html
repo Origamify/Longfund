@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <div class="panel-head">
+    <h2>watchlist</h2>
+    <span class="muted">one row per symbol · sparkline = total return</span>
+  </div>
+  {% if data_note %}<div class="muted" style="margin: 0 0 8px 2px">{{ data_note }}</div>{% endif %}
+  <table class="data">
+    <thead>
+      <tr><th>symbol</th><th class="num">last</th><th class="num">day</th><th>{{ spark_days }}d</th></tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td class="sym">
+          <a href="/symbol/{{ row.symbol }}">{{ row.symbol }}</a>
+          {% if row.company %}<div class="sym-note">{{ row.company }}{% if row.sector %} · {{ row.sector }}{% endif %}</div>{% endif %}
+        </td>
+        {% if row.ok %}
+        <td class="num mono">{{ "%.2f"|format(row.last) }}</td>
+        <td class="num mono {{ 'up' if row.change >= 0 else 'down' }}">{{ "%+.2f%%"|format(row.change * 100) }}</td>
+        <td>{{ row.spark|safe }}</td>
+        {% else %}
+        <td colspan="3" class="muted">no cached data — restart to warm</td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <form method="post" action="/watchlist" class="trade-form">
+    <input name="symbol" placeholder="add symbol (e.g. GOOGL)" aria-label="symbol">
+    <button>add</button>
+  </form>
+</section>
+{% endblock %}

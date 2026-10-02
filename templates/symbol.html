@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="crumb"><a href="/">&larr; watchlist</a></div>
+
+<div class="sym-head">
+  <h2>{{ symbol }}</h2>
+  <span class="sym-price mono">${{ "%.2f"|format(last_price) }}</span>
+  {%- if day_change is not none %}
+  <span class="sym-change {{ 'up' if day_change >= 0 else 'down' }}">{{ "%+.2f%%"|format(day_change * 100) }}</span>
+  {%- endif %}
+  {%- if total_return %}
+  <span class="chip" title="long-horizon numbers use adjusted closes: dividends and distributions reinvested (Yahoo's total-return approximation)">total return</span>
+  {%- endif %}
+</div>
+{% if company %}<div class="sym-sub">{{ company }}</div>{% endif %}
+
+<div class="perf">
+  {% for label, value, kind, desc in perf_strip %}
+  <span class="perf-item" title="{{ desc }}"><span class="muted">{{ label }}</span>
+    {%- if value is none %}<span class="muted">—</span>
+    {%- elif kind == 'num' %}<span class="{{ 'up' if value >= 0 else 'down' }}">{{ '%+.2f'|format(value) }}</span>
+    {%- elif kind == 'px_pct' %}<span>${{ "{:,.2f}".format(value[0]) }} ({{ '%+.1f'|format(value[1] * 100) }}%)</span>
+    {%- else %}<span class="{{ 'up' if value >= 0 else 'down' }}">{{ '%+.1f'|format(value * 100) }}%</span>
+    {%- endif %}</span>
+  {% endfor %}
+</div>
+
+<div class="sym-grid">
+  <div>
+    <section class="panel">
+      <div class="panel-head">
+        <h3>{{ 'total return' if total_return else 'price' }} · SMA overlay</h3>
+      </div>
+      <div class="chart-card chart-tall"><canvas id="chart"></canvas></div>
+      <div class="chart-foot">
+        {% include "_ranges.html" %}
+        <span class="ranges">
+          <button id="vol-toggle" title="toggle volume bars (drawdown toggles via the chart legend)">volume: off</button>
+        </span>
+      </div>
+    </section>
+
+      {%- macro stat_panel(heading, rows, lead=False) %}
+      <section class="panel">
+        <div class="panel-head">
+          <h3>{{ heading }}{% if lead %} · <span class="muted">{{ stat_title or "fundamentals" }}</span>{% endif %}</h3>
+          {%- if lead %}<span class="muted">{{ stat_meta or "—" }}</span>{% endif %}
+        </div>
+        <table class="data">
+          <tbody>
+            <tr class="stat-cols"><td></td><td class="num">symbol</td><td class="num" title="approximate broad-market median (US large caps) — sector mix moves these a lot; context, not a verdict">market</td></tr>
+            {%- for label, gloss, value, market, desc in rows %}
+            <tr><td title="{{ desc }}">{{ label }} <span class="gloss">— {{ gloss }}</span></td><td class="num mono">{{ value }}</td><td class="num mono mref">{{ market }}</td></tr>
+            {%- endfor %}
+          </tbody>
+        </table>
+      </section>
+      {%- endmacro %}
+      {% for heading, rows in stat_groups %}{{ stat_panel(heading, rows, loop.first) }}{% endfor %}
+
+    {%- if bench_rows %}
+    <section class="panel">
+      <div class="panel-head">
+        <h3>vs S&amp;P 500</h3>
+        <span class="muted">{{ bench_meta }}</span>
+      </div>
+      <table class="data">
+        <tbody>
+          {% for label, gloss, value, desc in bench_rows %}
+          <tr><td title="{{ desc }}">{{ label }} <span class="gloss">— {{ gloss }}</span></td><td class="num mono">{{ value }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+    {%- endif %}
+
+    <section class="panel">
+      <div class="panel-head">
+        <h3>risk</h3>
+        <span class="muted">{{ risk_meta }}</span>
+      </div>
+      <table class="data">
+        <tbody>
+          {% for label, gloss, value, desc in risk_rows %}
+          <tr><td title="{{ desc }}">{{ label }} <span class="gloss">— {{ gloss }}</span></td><td class="num mono">{{ value }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% if rank_line %}<div class="rank-line muted" title="Watchlist ranks per factor plus the composite (mean of demeaned ranks). Cross-sectional rank is what the factor research trades — long top decile, short bottom. Factors are blended because they are weakly or negatively correlated, so blends earn the same spreads at lower risk than any single factor">vs watchlist: {{ rank_line }}</div>{% endif %}
+    </section>
+
+    {% for heading, rows in dist_groups %}{{ stat_panel(heading, rows) }}{% endfor %}
+  </div>
+</div>
+
+{% include "_chart_defaults.html" %}
+<script>
+  const payload = {{ payload | tojson }};
+
+  const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const volColors = (cs) => cs.map((c, i) =>
+    c >= (cs[i - 1] ?? c) ? cssVar("--vol-up") : cssVar("--vol-down"));
+  const fmtVol = (v) =>
+    v >= 1e9 ? (v / 1e9).toFixed(1) + "B" : v >= 1e6 ? (v / 1e6).toFixed(1) + "M"
+    : v >= 1e3 ? (v / 1e3).toFixed(1) + "K" : v;
+
+  const chart = new Chart(document.getElementById("chart"), {
+    type: "line",
+    data: {
+      labels: payload.dates,
+      datasets: [
+        { label: "close", data: payload.closes, borderColor: cssVar("--chart-close"), pointRadius: 0, borderWidth: 1.6, yAxisID: "y" },
+        { label: "SMA 50", data: payload.sma_short, borderColor: cssVar("--chart-sma-s"), pointRadius: 0, borderWidth: 1, yAxisID: "y" },
+        { label: "SMA 200", data: payload.sma_long, borderColor: cssVar("--chart-sma-l"), pointRadius: 0, borderWidth: 1, yAxisID: "y" },
+        { label: "volume", type: "bar", data: payload.volume, backgroundColor: volColors(payload.closes), yAxisID: "yVol", order: 3, borderWidth: 0, hidden: true },
+        // underwater curve; toggle via legend
+        { label: "drawdown", data: payload.drawdown, borderColor: cssVar("--dd-line"), backgroundColor: cssVar("--dd-fill"), fill: "origin", pointRadius: 0, borderWidth: 1, yAxisID: "yDD", hidden: true },
+        // relative strength vs ^GSPC: stock/bench ratio normalized to 1.0
+        // at window start; toggle via the legend
+        { label: "RS vs S&P", data: payload.rs, borderColor: cssVar("--rs-line"), borderDash: [2, 3], pointRadius: 0, borderWidth: 1, yAxisID: "yRS", hidden: true },
+      ],
+    },
+    options: {
+      animation: false,
+      maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      scales: {
+        x: lfXScale(),
+        y: { position: "right", ticks: { maxTicksLimit: 8 } },
+        yVol: { display: false, position: "left", ticks: { maxTicksLimit: 3, callback: (v) => fmtVol(v) }, grid: { drawOnChartArea: false } },
+        yDD: { display: false, suggestedMax: 0 },
+        yRS: { display: false },
+      },
+      plugins: { legend: { labels: { boxWidth: 12, boxHeight: 2 } } },
+    },
+  });
+
+  // theme switching: recolor every dataset from the CSS vars, then update
+  window.lfCharts.push(chart);
+  window.lfRestylers.push(() => {
+    const ds = chart.data.datasets;
+    ds[0].borderColor = cssVar("--chart-close");
+    ds[1].borderColor = cssVar("--chart-sma-s");
+    ds[2].borderColor = cssVar("--chart-sma-l");
+    ds[3].backgroundColor = volColors(ds[0].data);
+    ds[4].borderColor = cssVar("--dd-line");
+    ds[4].backgroundColor = cssVar("--dd-fill");
+    ds[5].borderColor = cssVar("--rs-line");
+  });
+
+  // timescale buttons: slice to the last n bars, no reload
+  lfRanges((n) => {
+    const cut = (a) => a.slice(-n);
+    chart.data.labels = cut(payload.dates);
+    const ds = chart.data.datasets;
+    ds[0].data = cut(payload.closes);
+    ds[1].data = cut(payload.sma_short);
+    ds[2].data = cut(payload.sma_long);
+    ds[3].data = cut(payload.volume);
+    ds[3].backgroundColor = volColors(ds[0].data);
+    ds[4].data = cut(payload.drawdown);
+    ds[5].data = cut(payload.rs);
+    chart.update("none");
+  }, payload.dates, {{ range_arg | tojson }});
+
+  // volume toggle: show/hide the dataset and its axis together
+  const volBtn = document.getElementById("vol-toggle");
+  volBtn.addEventListener("click", () => {
+    const on = !chart.isDatasetVisible(3);
+    chart.setDatasetVisibility(3, on);
+    chart.options.scales.yVol.display = on;
+    volBtn.textContent = `volume: ${on ? "on" : "off"}`;
+    volBtn.classList.toggle("selected", on);
+    chart.update();
+  });
+</script>
+{% endblock %}
