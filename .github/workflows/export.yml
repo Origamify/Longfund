@@ -15,7 +15,7 @@ on:
         default: ""
 
 permissions:
-  contents: read
+  contents: write  # push gh-pages (Pages serve) in addition to the artifact
 
 jobs:
   export:
@@ -48,3 +48,11 @@ jobs:
           name: ${{ inputs.symbol }}-analysis
           path: export/*.html
           if-no-files-found: error
+
+      # also publish to Pages: https://<user>.github.io/<repo>/<SYMBOL>.html
+      # (snapshots accumulate; disable keep_files to replace on each run)
+      - uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: export
+          keep_files: true
