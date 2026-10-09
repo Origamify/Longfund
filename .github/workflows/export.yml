@@ -31,8 +31,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      SYMBOLS: ${{ inputs.symbols || env.DEFAULT_SYMBOLS }}
       RANGE: ${{ inputs.range }}
+      # dispatch symbols may be empty (schedule always is) — the script
+      # falls back to DEFAULT_SYMBOLS, which is readable there
     steps:
       - uses: actions/checkout@v4
 
@@ -49,10 +50,12 @@ jobs:
       - name: Export HTML snapshots
         run: |
           mkdir -p export
+          symbols="${{ inputs.symbols }}"
+          [ -n "$symbols" ] || symbols="$DEFAULT_SYMBOLS"
           range_args=()
           [ -n "$RANGE" ] && range_args+=(--range "$RANGE")
           ok=0
-          for symbol in ${SYMBOLS//,/ }; do
+          for symbol in ${symbols//,/ }; do
             [ -n "$symbol" ] || continue
             symbol="${symbol^^}"
             echo "::group::Export ${symbol}"
