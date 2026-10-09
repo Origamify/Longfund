@@ -49,10 +49,41 @@ jobs:
           path: export/*.html
           if-no-files-found: error
 
-      # also publish to Pages: https://<user>.github.io/<repo>/<SYMBOL>.html
-      # (snapshots accumulate; disable keep_files to replace on each run)
+      # also publish to Pages: https://<user>.github.io/<repo>/ — index.html
+      # lists every exported snapshot; past exports are carried forward
+      - name: Prepare Pages site (carry forward + index)
+        run: |
+          mkdir -p pages
+          # pull existing gh-pages files (no-op on the first run)
+          if git fetch --no-tags --depth 1 origin gh-pages; then
+            git --work-tree=pages checkout FETCH_HEAD -- .
+          fi
+          cp export/*.html pages/
+          python - <<'EOF'
+          import pathlib
+          pages = pathlib.Path("pages")
+          reports = sorted(
+              p for p in pages.glob("*.html")
+              if p.name != "index.html"
+          )
+          items = "\n".join(
+              f'        <li><a href="{p.name}">{p.stem}</a></li>'
+              for p in reports
+          ) or "        <li>(no reports yet)</li>"
+          pages.joinpath("index.html").write_text(f"""<!doctype html>
+          <html lang="en"><head><meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <title>Longfund — exported analyses</title></head>
+          <body style="font-family: system-ui, sans-serif; max-width: 32rem; margin: 2rem auto; line-height: 1.6">
+            <h1>Longfund — exported analyses</h1>
+            <ul>
+          {items}
+            </ul>
+          </body></html>""")
+          EOF
+
       - uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: export
-          keep_files: true
+          publish_dir: pages
+          keep_files: false
