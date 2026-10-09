@@ -1,28 +1,37 @@
-# Manual symbol export: dispatch with a ticker, download the HTML snapshot
-# from the run's Artifacts. No server runs; the exporter's warm pass is the
-# only network code (all of it inside src/market.py).
+# Export analysis snapshots: dispatch with symbols (comma-separated,
+# default = DEFAULT_SYMBOLS below) or let the daily schedule run the whole
+# list. HTML snapshots land in the run's Artifacts and on Pages
+# (index.html lists every report). No server runs; the exporter's warm
+# pass is the only network code (all of it inside src/market.py).
 name: Export analysis
 
 on:
   workflow_dispatch:
     inputs:
-      symbol:
-        description: "Ticker to export (e.g. AAPL)"
-        required: true
+      symbols:
+        description: "Comma-separated tickers (e.g. 'VOO, NVDA'); empty = default list"
+        required: false
+        default: ""
       range:
         description: "Chart range: years (e.g. 5) or 'ytd'; empty = default"
         required: false
         default: ""
+  schedule:
+    - cron: "0 0 * * *"   # daily 00:00 UTC
 
 permissions:
   contents: write  # push gh-pages (Pages serve) in addition to the artifact
 
+# scheduled runs have no dispatch inputs — the default list lives here
+env:
+  DEFAULT_SYMBOLS: "VOO,VTI,NVDA,ZURVY,SNPS,HDEU.L"
+
 jobs:
   export:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
-      SYMBOL: ${{ inputs.symbol }}
+      SYMBOLS: ${{ inputs.symbols || env.DEFAULT_SYMBOLS }}
       RANGE: ${{ inputs.range }}
     steps:
       - uses: actions/checkout@v4
@@ -34,18 +43,33 @@ jobs:
 
       - run: pip install -r requirements.txt
 
-      # the exporter watchlists + warms the symbol itself (cold-start
-      # capable); a bad ticker makes the run exit red
-      - name: Export HTML snapshot
+      # the exporter watchlists + warms each symbol itself (cold-start
+      # capable); a bad ticker makes the run exit red, good ones before
+      # it still export
+      - name: Export HTML snapshots
         run: |
-          symbol="${SYMBOL^^}"
-          args=("$symbol" -o "export/${symbol}.html")
-          [ -n "$RANGE" ] && args+=(--range "$RANGE")
-          python utils/export_html_analysis.py "${args[@]}"
+          mkdir -p export
+          range_args=()
+          [ -n "$RANGE" ] && range_args+=(--range "$RANGE")
+          ok=0
+          for symbol in ${SYMBOLS//,/ }; do
+            [ -n "$symbol" ] || continue
+            symbol="${symbol^^}"
+            echo "::group::Export ${symbol}"
+            if python utils/export_html_analysis.py "$symbol" \
+                -o "export/${symbol}.html" "${range_args[@]}"; then
+              ok=$((ok+1))
+            else
+              echo "EXPORT_FAILED=${symbol}" >> "$GITHUB_ENV"
+            fi
+            echo "::endgroup::"
+          done
+          [ "$ok" -gt 0 ] || { echo "no symbol exported"; exit 1; }
+          test -z "$EXPORT_FAILED" || { echo "failed: $EXPORT_FAILED"; exit 1; }
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ inputs.symbol }}-analysis
+          name: analysis
           path: export/*.html
           if-no-files-found: error
 
