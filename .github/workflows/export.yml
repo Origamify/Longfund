@@ -89,23 +89,64 @@ jobs:
           python - <<'EOF'
           import pathlib
           pages = pathlib.Path("pages")
+          theme_css = pathlib.Path("static/theme.css").read_text()
           reports = sorted(
               p for p in pages.glob("*.html")
               if p.name != "index.html"
           )
           items = "\n".join(
-              f'        <li><a href="{p.name}">{p.stem}</a></li>'
+              f'      <li><a href="{p.name}">{p.stem}</a></li>'
               for p in reports
-          ) or "        <li>(no reports yet)</li>"
+          ) or "      <li class=\"muted\">(no reports yet)</li>"
           pages.joinpath("index.html").write_text(f"""<!doctype html>
           <html lang="en"><head><meta charset="utf-8">
           <meta name="viewport" content="width=device-width, initial-scale=1">
-          <title>Longfund — exported analyses</title></head>
-          <body style="font-family: system-ui, sans-serif; max-width: 32rem; margin: 2rem auto; line-height: 1.6">
-            <h1>Longfund — exported analyses</h1>
-            <ul>
+          <script>
+            (function () {{
+              var saved = null;
+              try {{ saved = localStorage.getItem("lf-theme"); }} catch (e) {{}}
+              var dark = saved ? saved === "dark"
+                : window.matchMedia("(prefers-color-scheme: dark)").matches;
+              document.documentElement.dataset.theme = dark ? "dark" : "light";
+            }})();
+          </script>
+          <title>Longfund — exported analyses</title>
+          <style>{theme_css}</style>
+          <style>/* index-only: report list rhythm on top of theme.css */
+            .report-list {{ list-style: none; margin: 10px 0 0; padding: 0; }}
+            .report-list li {{ padding: 7px 0; border-bottom: 1px solid var(--border); }}
+            .report-list li:last-child {{ border-bottom: none; }}
+          </style></head>
+          <body>
+          <header class="topbar"><div class="shell topbar-inner">
+            <span class="brand">Longfund</span>
+            <nav class="topnav">
+              <button class="theme-toggle" id="theme-toggle" title="switch light/dark theme">☾</button>
+            </nav>
+          </div></header>
+          <main class="shell">
+            <section class="panel">
+              <div class="panel-head"><h1>Exported analyses</h1>
+                <span class="muted">{len(reports)} report{"s" if len(reports) != 1 else ""}</span></div>
+              <ul class="report-list">
           {items}
-            </ul>
+              </ul>
+            </section>
+          </main>
+          <footer class="footer shell">free data — indicative only, not investment advice</footer>
+          <script>
+            document.getElementById("theme-toggle").addEventListener("click", function () {{
+              var root = document.documentElement;
+              var next = root.dataset.theme === "dark" ? "light" : "dark";
+              root.dataset.theme = next;
+              try {{ localStorage.setItem("lf-theme", next); }} catch (e) {{}}
+              this.textContent = next === "dark" ? "☀" : "☾";
+            }});
+            (function () {{
+              var b = document.getElementById("theme-toggle");
+              b.textContent = document.documentElement.dataset.theme === "dark" ? "☀" : "☾";
+            }})();
+          </script>
           </body></html>""")
           EOF
 
